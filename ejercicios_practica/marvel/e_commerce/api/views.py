@@ -36,6 +36,12 @@ from drf_yasg import openapi
 from e_commerce.api.serializers import *
 from e_commerce.models import Comic
 
+from django.db.models import Q
+
+from rest_framework.pagination import (
+    LimitOffsetPagination,
+    PageNumberPagination
+)
 
 mensaje_headder = '''
 Class API View
@@ -323,3 +329,22 @@ class LoginUserAPIView(APIView):
             data=user_login_serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
         )
+
+class ComicUserAPIView(ListAPIView):
+    serializer_class = ComicSerializer
+
+    class ShortResultsSetPagination(PageNumberPagination):
+        page_size = 10
+
+    def get_queryset(self):
+        username = self.kwargs['username']
+
+        queryset = Comic.objects.filter(Q(wishlist__user__username=username) | Q(wishlist__user__username=username, wishlist__cart=True))
+
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) | Q(description__icontains=search)
+            ).order_by('title')
+
+        return queryset
