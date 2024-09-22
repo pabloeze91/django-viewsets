@@ -220,8 +220,8 @@ class WishListSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data['user'] = UserSerializer(many=False)
-        data['comic'] = ComicSerializer(many=False)
+        data['user'] = UserSerializer(many=False).data
+        data['comic'] = ComicSerializer(many=False).data
         return data
 
     class Meta:
