@@ -7,7 +7,8 @@ from .viewsets import (
     CustomUserViewSet,
     UserViewSet,
     FilteringUserViewSet,
-    FilteringBackendUserViewSet
+    FilteringBackendUserViewSet,
+    WishListViewSet
 )
 
 # Con esto indicamos que el router se haga cargo de nuestras
@@ -40,4 +41,10 @@ router.register(
     FilteringUserViewSet,
     basename='genericviewset/users'
 )
+router.register(
+    r'wishlist',
+    WishListViewSet,
+    basename= 'wishlist'
+)
+urlpatterns = router.urls
 urlpatterns = router.urls
