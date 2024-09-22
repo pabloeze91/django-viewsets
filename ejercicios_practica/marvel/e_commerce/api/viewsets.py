@@ -1,238 +1,350 @@
+from django.contrib.auth import authenticate
+from django.forms.models import model_to_dict
 from django.shortcuts import get_object_or_404
+
+from rest_framework import status
+from rest_framework.authentication import TokenAuthentication, BasicAuthentication
+from rest_framework.decorators import api_view
+# (GET - ListAPIView) Listar todos los elementos en la entidad:
+# (POST - CreateAPIView) Inserta elementos en la DB
+# (GET - RetrieveAPIView) Devuelve un solo elemento de la entidad.
+# (GET-POST - ListCreateAPIView) Para listar o insertar elementos en la DB
+# (GET-PUT - RetrieveUpdateAPIView) Devuelve o actualiza un elemento en particular.
+# (DELETE - DestroyAPIView) Permite eliminar un elemento.
+from rest_framework.generics import (
+    ListAPIView,
+    CreateAPIView,
+    RetrieveAPIView,
+    ListCreateAPIView,
+    RetrieveUpdateAPIView,
+    DestroyAPIView,
+    GenericAPIView,
+    UpdateAPIView
+)
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
+from rest_framework.response import Response
+from rest_framework.validators import ValidationError
+from rest_framework.views import APIView
+
+# NOTE: Importamos este decorador para poder customizar los 
+# parámetros y responses en Swagger, para aquellas
+# vistas de API basadas en funciones y basadas en Clases 
+# que no tengan definido por defecto los métodos HTTP.
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+from e_commerce.api.serializers import *
+from e_commerce.models import Comic
+
 from django.db.models import Q
 
-from rest_framework import viewsets
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
-from rest_framework.decorators import action
-
-# Librería para manejar filtrado:
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.filters import SearchFilter, OrderingFilter
-
-# Para manejar paginado:
 from rest_framework.pagination import (
     LimitOffsetPagination,
     PageNumberPagination
 )
 
-from e_commerce.models import User
-from .serializers import UserSerializer, UpdatePasswordUserSerializer
+mensaje_headder = '''
+Class API View
+
+```
+headers = {
+  'Authorization': 'Token 92937874f377a1ea17f7637ee07208622e5cb5e6',
+  
+  'actions': 'GET', 'POST', 'PUT', 'PATCH', 'DELETE',
+  
+  'Content-Type': 'application/json',
+  
+  'Cookie': 'csrftoken=cfEuCX6qThpN6UC9eXypC71j6A4KJQagRSojPnqXfZjN5wJg09hXXQKCU8VflLDR'
+}
+```
+'''
+
+@api_view(http_method_names=['GET'])
+def comic_list_api_view(request):
+    _queryset = Comic.objects.all()
+    _data = list(_queryset.values()) if _queryset.exists() else []
+    return Response(data=_data, status=status.HTTP_200_OK)
 
 
-# Genero una clase para configurar el paginado de la API.
-class ShortResultsSetPagination(PageNumberPagination):
-    page_size = 3   # Cantidad de resultados por página
-
-    # Me va a permitir configurar la cantidad de resultados a mostrar
-    # por página.
-    page_size_query_param = 'page_size'
-    max_page_size = 10
-
-
-# NOTE: Vemos que ahora los métodos para cada
-# método HTTP, en los viewsets directamente
-# se los llaman "acciones". Ejemplo: list, create,
-# update, retrieve, destroy, etc.
-class CustomUserViewSet(viewsets.ViewSet):
-    permission_classes = [IsAdminUser]
-    serializer_class = UserSerializer
-    queryset = User.objects.all()
-
-    # Este método permite administrar los permisos según el tipo de
-    # acción que se ejecute.
-    def get_permissions(self):
-        if self.action != 'list':
-            self.permission_classes = [IsAuthenticated]
-        return [permission() for permission in self.permission_classes]
-
-    def _get_current_user(self):
-        return get_object_or_404(
-            User, username=self.request.user.username
-        )
-
-    def list(self, request):
-        return Response(
-            data=self.serializer_class(instance=self.queryset, many=True).data,
-            status=status.HTTP_200_OK
-        )
-
-    def create(self, request):
-        user_serializer = self.serializer_class(data=request.data)
-        if user_serializer.is_valid():
-            user_serializer.save()
-            return Response(
-                data=user_serializer.data,
-                status=status.HTTP_201_CREATED
-            )
-        return Response(
-            data=user_serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    def update(self, request, pk=None):
-        _current_user =  self._get_current_user()
-
-        # Me devuelve la instancia a partir del queryset, en caso
-        # de no existir, retorna un código de estado 404.
-        _user = get_object_or_404(self.queryset, pk=pk)
-
-        if _current_user != _user:
-            return Response(status=status.HTTP_403_FORBIDDEN)
-
-        user_serializer = self.serializer_class(
-            instance = _user,
-            data=request.data
-        )
-        if user_serializer.is_valid():
-            user_serializer.save()
-            return Response(
-                data=user_serializer.data,
-                status=status.HTTP_200_OK
-            )
-        return Response(
-            data=user_serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    def retrieve(self, request, pk=None):
-        _current_user =  self._get_current_user()
-        _user = get_object_or_404(self.queryset, pk=pk)
-
-        # if _current_user != _user:
-        #     return Response(status=status.HTTP_403_FORBIDDEN)
-
-        return Response(
-            data=self.serializer_class(
-                instance=_user,
-                many=False
-            ).data,
-            status=status.HTTP_200_OK
-        )
-
-    def destroy(self, request, pk=None):
-        self.queryset.filter(pk=pk).delete()
-        return Response(
-            data={'message': 'the user was deleted successfully'},
-            status=status.HTTP_200_OK
-        )
-
-    # Al trabajar con Viewsets podemos definir nuestras propias
-    # acciones basándonos en los métodos HTTTP.
-    @action(
-        detail=True,
-        methods=['put'],
-        name="change-password",
-        url_path='change-password'
+@api_view(http_method_names=['GET'])
+def comic_retrieve_api_view(request):
+    instance = get_object_or_404(
+        Comic, id=request.query_params.get('id')
     )
-    def change_password(self, request, pk=None):
-        _current_user =  self._get_current_user()
-        _user = get_object_or_404(self.queryset, pk=pk)
+    return Response(
+        data=model_to_dict(instance), status=status.HTTP_200_OK
+    )
 
-        if _current_user != _user:
-            return Response(status=status.HTTP_403_FORBIDDEN)
 
-        _user_serializer = UpdatePasswordUserSerializer(
-            instance=_user,
+@api_view(http_method_names=['POST'])
+def comic_create_api_view(request):
+    _marvel_id = request.data.pop('marvel_id', None)
+    print(request.data)
+    if not _marvel_id:
+        raise ValidationError(
+            {"marvel_id": "Este campo no puede ser nulo."}
+        )
+    _instance, _created = Comic.objects.get_or_create(
+        marvel_id=_marvel_id,
+        defaults=request.data
+    )
+    if _created:
+        return Response(
+            data=model_to_dict(_instance), status=status.HTTP_201_CREATED
+        )
+    return Response(
+        data={
+            "marvel_id": "Ya existe un comic con ese valor, debe ser único."
+        },
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+class GetComicAPIView(ListAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO GET]`
+    Esta vista de API nos devuelve una lista de todos los comics presentes 
+    en la base de datos.
+    '''
+    queryset = Comic.objects.all()
+    serializer_class = ComicSerializer
+    permission_classes = (AllowAny,)
+
+
+
+class PostComicAPIView(CreateAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO POST]`
+    Esta vista de API nos permite hacer un insert en la base de datos.
+    '''
+    queryset = Comic.objects.all()
+    serializer_class = ComicSerializer
+    permission_classes = (AllowAny,)
+
+
+class ListCreateComicAPIView(ListCreateAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO GET-POST]`
+    Esta vista de API nos devuelve una lista de todos los comics presentes 
+    en la base de datos, pero en este caso ordenados según "marvel_id".
+    Tambien nos permite hacer un insert en la base de datos.
+    '''
+    queryset = Comic.objects.all().order_by('marvel_id')
+    serializer_class = ComicSerializer
+    permission_classes = (IsAuthenticated & IsAdminUser,)
+
+
+class RetrieveUpdateComicAPIView(RetrieveUpdateAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO GET-PUT-PATCH]`
+    Esta vista de API nos permite actualizar un registro,
+    o simplemente visualizarlo.
+    '''
+    queryset = Comic.objects.all()
+    serializer_class = ComicSerializer
+    permission_classes = (IsAuthenticated & IsAdminUser,)
+
+
+# En este caso observamos como es el proceso de actualización "parcial"
+# utilizando el serializador para validar los datos que llegan del request.
+# Dicho proceso se conoce como "deserialización".
+class UpdateComicAPIView(UpdateAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO PUT-PATCH]`
+    Esta vista de API nos permite actualizar un registro,
+    o simplemente visualizarlo.
+    '''
+    queryset = Comic.objects.all()
+    serializer_class = ComicSerializer
+    permission_classes = (IsAuthenticated & IsAdminUser,)
+    lookup_field = 'marvel_id'
+
+    def put(self, request, *args, **kwargs):
+        _serializer = self.get_serializer(
+            instance=self.get_object(),
             data=request.data,
+            many=False,
             partial=True
         )
-        # `raise_exception=True` evito de realizar la condición de la línea
-        # 48, pero de todas maneras genero una excepción si hay un problema
-        # con la validación de los datos.
-        _user_serializer.is_valid(raise_exception=True)
-        _user_serializer.save()
+        if _serializer.is_valid():
+            _serializer.save()
+            return Response(data=_serializer.data, status=status.HTTP_200_OK)
         return Response(
-            data=_user_serializer.data,
-            status=status.HTTP_200_OK
+            data=_serializer.errors, status=status.HTTP_400_BAD_REQUEST
         )
 
 
-# Ahora veamos que sucede si los viewsets los
-# heredamos de ModelViewSet.
-class UserViewSet(viewsets.ModelViewSet):
-    permission_classes = [AllowAny]
-    serializer_class = UserSerializer
-    # NOTE: Con el siguiente atributo puedo administrar que tipo
-    # de métodos permite esta view.
-    # http_method_names = ['get', 'post', 'put', 'delete']
-    queryset = User.objects.all()
-
-
-class FilteringBackendUserViewSet(viewsets.ModelViewSet):
+class DestroyComicAPIView(DestroyAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO DELETE]`
+    Esta vista de API nos devuelve una lista de todos los comics presentes 
+    en la base de datos.
     '''
-    Vista de API basada en Clase que permite manejar
-    el filtrado, búsqueda, paginado y orden de los resultados del
-    listado de la API.
+    queryset = Comic.objects.all()
+    serializer_class = ComicSerializer
+    permission_classes = (IsAuthenticated & IsAdminUser,)
+
+
+# class GetOneComicAPIView(RetrieveAPIView):
+#     __doc__ = f'''{mensaje_headder}
+#     `[METODO GET]`
+#     Esta vista de API nos devuelve un comic en particular de la base de datos.
+#     '''
+#     serializer_class = ComicSerializer
+#     permission_classes = (IsAuthenticated | IsAdminUser,)
+#     queryset = Comic.objects.all()
+
+
+class GetOneComicAPIView(RetrieveAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO GET]`
+    Esta vista de API nos devuelve un comic en particular de la base de datos.
     '''
-    permission_classes = (AllowAny,)
-    serializer_class = UserSerializer
-    # NOTE: Habilito sólo el método 'GET' para esta view.
-    http_method_names = ('get',)
-    queryset = serializer_class.Meta.model.objects.all()
-
-    # NOTE: Utilizo el tipo de filtro.
-    # filter_backends = (DjangoFilterBackend,)
-    # filter_backends = (DjangoFilterBackend, SearchFilter)
-    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
-
-    # NOTE: Selecciono los campos a filtrar.
-    filterset_fields = ('id', 'username', 'email', 'is_staff')
-
-    # Genero un Paginado
-    pagination_class = ShortResultsSetPagination    # ShortResultsSetPagination PageNumberPagination
-
-    # Para buscar el valor en los campos seleccionados.
-    # NOTE: se requiere `SearchFilter`.
-    search_fields = ('username', 'first_name', 'last_name')
-
-    # Permite ordenar el listado por los campos seleccionados.
-    # NOTE: se requiere `OrderingFilter`.
-    ordering_fields = ('pk', 'username')
-    ordering = ('pk',)  # ('-pk',)
-
-
-class FilteringUserViewSet(viewsets.GenericViewSet):
-    '''
-    Vista de API basada en Clase que permite manejar
-    el filtrado, búsqueda, y orden de los resultados del
-    listado de la API utilizando el ORM de Django.
-    '''
-    permission_classes = (AllowAny,)
-    serializer_class = UserSerializer
-    queryset = serializer_class.Meta.model.objects.all()
-
-    # NOTE: Habilito sólo el método 'GET' para esta view.
-    http_method_names = ('get',)
+    serializer_class = ComicSerializer
+    permission_classes = (IsAuthenticated | IsAdminUser,)
+    queryset = Comic.objects.all()
 
     def get_queryset(self):
-        # Obtengo el queryset llamando al método get_queryset mediante super.
-        queryset = super(FilteringUserViewSet, self).get_queryset()
+        '''
+        Sobrescribimos el método `get_queryset()` para poder filtrar el 
+        request por medio de la url. En este caso traemos de la url 
+        por medio de `self.kwargs` el parámetro `id` y con él 
+        realizamos una query para traer el comic del ID solicitado. 
+        '''
+        comic_id = self.kwargs['pk']
+        queryset = self.queryset.filter(id=comic_id)
+        return queryset
 
-        # Obtengo los parámetros dinámicos que me llegan en la URL
-        # cuando el usuario realiza una petición de tipo GET.
-        # NOTE: Recordar que otra forma de hacerlo es:
-        # _pk: self.request.GET.get('id')
-        _pk = self.request.query_params.get('id')
-        _username = self.request.query_params.get('username')
-        _is_staff = self.request.query_params.get('is_staff', '').capitalize()
-        _search = self.request.query_params.get('search', '')
-        _ordering = self.request.query_params.get('ordering', 'username')
 
-        queryset = queryset.filter(
-            Q(username__icontains=_username) &
-            Q(
-                Q(username__icontains=_search) |
-                Q(first_name__icontains=_search) |
-                Q(last_name__icontains=_search)
+class GetOneMarvelComicAPIView(RetrieveAPIView):
+    __doc__ = f'''{mensaje_headder}
+    `[METODO GET]`
+    Esta vista de API nos devuelve un comic en particular de la base de datos
+    a partir del valor del campo "marvel_id" pasado por URL.
+    '''
+    serializer_class = ComicSerializer
+    permission_classes = (IsAuthenticated | IsAdminUser,)
+    queryset = Comic.objects.all()
+    lookup_field = 'marvel_id'
+
+# Otra forma de realizar un Get y traernos un solo
+# # objeto o instancia(Detalle) utilizando el método ".get_object()"
+# y sobreescribiendo el método ".get()".
+# class GetOneMarvelComicAPIView(RetrieveAPIView):
+#     serializer_class = ComicSerializer
+#     permission_classes = (IsAuthenticated | IsAdminUser,)
+#     queryset = Comic.objects.all()
+#     lookup_field = 'marvel_id'
+
+#     def get(self, request, *args, **kwargs):
+#         serializer = self.get_serializer(
+#             instance=self.get_object(), many=False
+#         )
+#         return Response(
+#             data=serializer.data, status=status.HTTP_200_OK
+#         )
+
+
+# Si tuvieramos que hacerlo más genérico, usamos APIView, lo cual
+# nos permite tener más personalización sobre la View.
+# class GetOneMarvelComicAPIView(APIView):
+#     permission_classes = (IsAuthenticated | IsAdminUser,)
+
+#     def get_queryset(self):
+#         return Comic.objects.filter(
+#             marvel_id=self.kwargs.get('marvel_id')
+#         )
+
+#     def get(self, request, *args, **kwargs):
+#         _queryset = self.get_queryset()
+#         if not _queryset.exists():
+#             return Response(
+#                 data={'detail': 'Not found.'},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
+#         serializer = ComicSerializer(
+#             instance=_queryset.first(), many=False
+#         )
+#         return Response(
+#             data=serializer.data, status=status.HTTP_200_OK
+#         )
+
+
+class LoginUserAPIView(APIView):
+    '''
+    ```
+    Vista de API personalizada para recibir peticiones de tipo POST.
+    Esquema de entrada:
+    {"username":"root", "password":12345}
+    
+    Esta función sobrescribe la función post original de esta clase,
+    recibe "request" y hay que setear format=None, para poder recibir 
+    los datos en "request.data", la idea es obtener los datos enviados en el 
+    request y autenticar al usuario con la función "authenticate()", 
+    la cual devuelve el estado de autenticación.
+    Luego con estos datos se consulta el Token generado para el usuario,
+    si no lo tiene asignado, se crea automáticamente.
+    Esquema de entrada:\n
+    {
+        "username": "root",
+        "password": 12345
+    }
+    ```
+    '''
+    authentication_classes = ()
+    permission_classes = ()
+
+    # NOTE: Agregamos todo esto para personalizar
+    # el body de la request y los responses
+    # que muestra como ejemplo el Swagger para
+    # esta view.
+
+    # NOTE 2: Descomentar dicho decorador para
+    # mostrarlo en clase.
+
+    def post(self, request):
+        # Realizamos validaciones a través del serializador
+        user_login_serializer = UserLoginSerializer(data=request.data)
+        if user_login_serializer.is_valid():
+            _username = request.data.get('username')
+            _password = request.data.get('password')
+
+            # Si el usuario existe y sus credenciales son validas,
+            # tratamos de obtener el TOKEN:
+            _account = authenticate(username=_username, password=_password)
+            if _account:
+                _token, _created = Token.objects.get_or_create(user=_account)
+                _token_serializer = TokenSerializer(instance=_token, many=False)
+                _data = _token_serializer.data
+                return Response(
+                    data=TokenSerializer(instance=_token, many=False).data,
+                    status=status.HTTP_200_OK
+                )
+            return Response(
+                data={'error': 'Invalid Credentials.'},
+                status=status.HTTP_400_BAD_REQUEST
             )
-        ).order_by(_ordering)
+        print(user_login_serializer.errors)
+        return Response(
+            data=user_login_serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-        # Realizo el filtrado según los parámetros que me pasen.
-        if _pk:
-            queryset = queryset.filter(pk=int(_pk))
-        if _is_staff:
-            queryset = queryset.filter(is_staff=eval(_is_staff))
+class ComicUserAPIView(ListAPIView):
+    serializer_class = ComicSerializer
+
+    class ShortResultsSetPagination(PageNumberPagination):
+        page_size = 10
+
+    def get_queryset(self):
+        username = self.kwargs['username']
+
+        queryset = Comic.objects.filter(Q(wishlist__user__username=username) | Q(wishlist__user__username=username, wishlist__cart=True))
+
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) | Q(description__icontains=search)
+            ).order_by('title')
 
         return queryset
